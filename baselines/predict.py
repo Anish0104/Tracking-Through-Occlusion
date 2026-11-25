@@ -94,11 +94,17 @@ def _predictor(model, seed=0, checkpoint=None, device="cpu", data=None, allow_da
 def run(model="last_pos", data="starter", n=TEST_SIZE, data_seed=TEST_SEED,
         seed=0, out_dir="preds", data_tag=None, checkpoint=None, device="cpu",
         allow_data_mismatch=False):
-    from baselines.train_gru import get_make_batch   # same data sources as training
+    from baselines.data_cache import resolve_module
+    import numpy as np
 
     predict, n_params = _predictor(model, seed, checkpoint, device, data, allow_data_mismatch)
-    frames = get_make_batch(data)(n=n, seed=data_seed)["frames"]   # pixels only; labels dropped
-    pred_xy = predict(frames)
+    module = resolve_module(data)
+    if module.__name__ == "data.generator" and (n, data_seed) == (TEST_SIZE, TEST_SEED):
+        data_tag = data_tag or module.OFFICIAL_TEST_TAG
+        pred_xy = np.concatenate([predict(batch["frames"]) for batch in module.iter_split("test")])
+    else:
+        frames = module.make_batch(n=n, seed=data_seed)["frames"]
+        pred_xy = predict(frames)
 
     data_tag = data_tag or default_data_tag(data, data_seed)
     out_dir = Path(out_dir)

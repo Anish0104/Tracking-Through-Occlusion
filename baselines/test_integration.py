@@ -101,7 +101,8 @@ def _train_tiny(tmp_path, data, seed=0, **kw):
 
 # ---------------------------------------------------------------- generator switch
 
-def test_missing_generator_gives_clear_error():
+def test_missing_generator_gives_clear_error(monkeypatch):
+    monkeypatch.setitem(sys.modules, "data.generator", None)
     with pytest.raises(ModuleNotFoundError, match="has not been merged yet"):
         data_cache.resolve_module("generator")
 
