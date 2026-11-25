@@ -9,6 +9,13 @@ Example (starter test bank: data seed 300, 1,000 videos):
     -> loads checkpoints/gru_seed1.pt, writes preds/gru_seed1.npz (n_params 1,067,064)
 
 Only `frames` reaches the model; labels are never passed to it.
+
+Data provenance
+    data_tag defaults to "<generator module name>_test_s<data seed>", e.g.
+    "starter_test_s300" or "generator_test_s300", whichever alias (--data generator
+    or --data data.generator) was typed. The GRU checkpoint and the Kalman config
+    record which generator (module + source fingerprint) they were trained / tuned
+    on; predicting on a different generator raises unless --allow-data-mismatch.
 """
 
 import argparse
@@ -20,8 +27,46 @@ TEST_SEED = 300      # CONTRACT.md section 4
 TEST_SIZE = 1000
 
 
-def _predictor(model, seed=0, checkpoint=None, device="cpu"):
-    """Return (predict(frames) -> pred_xy, n_params or None)."""
+def data_identity(data):
+    """(module name, source fingerprint) of a data source alias or module path."""
+    from baselines import data_cache
+    module = data_cache.resolve_module(data)
+    return module.__name__, data_cache.source_fingerprint(module)
+
+
+def default_data_tag(data, data_seed):
+    """Same tag for every alias of the same generator and seed."""
+    module, _ = data_identity(data)
+    return f"{module.rsplit('.', 1)[-1]}_test_s{data_seed}"
+
+
+def check_provenance(what, trained_module, trained_fp, data, allow=False):
+    """Raise if `what` was trained/tuned on another generator than `data`."""
+    if data is None:
+        return
+    module, fp = data_identity(data)
+    problems = []
+    if trained_module is not None and trained_module != module:
+        problems.append(f"it was fitted on {trained_module}, but predictions are for {module}")
+    elif trained_fp is not None and trained_fp != fp:
+        problems.append(f"{module} has changed since it was fitted (source fingerprint differs)")
+    if problems and not allow:
+        raise ValueError(f"{what}: {problems[0]}. Retrain/retune, or pass --allow-data-mismatch.")
+
+
+def _kalman_provenance():
+    import json
+    from baselines.kalman import CONFIG_PATH
+    sel = json.loads(CONFIG_PATH.read_text()).get("selection", {}) if CONFIG_PATH.exists() else {}
+    module = sel.get("module")
+    if module is None and "data" in sel:              # older files: "data.starter.make_batch"
+        module = sel["data"].rsplit(".", 1)[0]
+    return module, sel.get("fingerprint")
+
+
+def _predictor(model, seed=0, checkpoint=None, device="cpu", data=None, allow_data_mismatch=False):
+    """Return (predict(frames) -> pred_xy, n_params or None).
+    With `data`, also check the model was fitted on that generator."""
     if model == "gru":
         from baselines.gru import predict
         from baselines.train_gru import load_checkpoint, resolve_device
@@ -30,25 +75,32 @@ def _predictor(model, seed=0, checkpoint=None, device="cpu"):
         if payload["config"]["seed"] != seed:
             raise ValueError(f"checkpoint was trained with seed {payload['config']['seed']}, "
                              f"not --seed {seed}")
+        cfg = payload["config"]
+        trained = cfg.get("data_module") or data_identity(cfg["data"])[0]
+        check_provenance(f"GRU checkpoint {checkpoint or f'checkpoints/gru_seed{seed}.pt'}",
+                         trained, cfg.get("data_fingerprint"), data, allow_data_mismatch)
         return (lambda frames: predict(frames, net, device=dev)), payload["n_params"]
     if model == "last_pos":
         from baselines.last_pos import predict
         return predict, None
     if model == "kalman":
         from baselines.kalman import predict   # uses baselines/kalman_config.json
+        check_provenance("baselines/kalman_config.json", *_kalman_provenance(), data,
+                         allow_data_mismatch)
         return predict, None
     raise ValueError(f"unknown or not yet implemented model: {model}")
 
 
 def run(model="last_pos", data="starter", n=TEST_SIZE, data_seed=TEST_SEED,
-        seed=0, out_dir="preds", data_tag=None, checkpoint=None, device="cpu"):
+        seed=0, out_dir="preds", data_tag=None, checkpoint=None, device="cpu",
+        allow_data_mismatch=False):
     from baselines.train_gru import get_make_batch   # same data sources as training
 
-    predict, n_params = _predictor(model, seed, checkpoint, device)
+    predict, n_params = _predictor(model, seed, checkpoint, device, data, allow_data_mismatch)
     frames = get_make_batch(data)(n=n, seed=data_seed)["frames"]   # pixels only; labels dropped
     pred_xy = predict(frames)
 
-    data_tag = data_tag or f"{data}_test_s{data_seed}"
+    data_tag = data_tag or default_data_tag(data, data_seed)
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{model}_seed{seed}.npz"
@@ -65,12 +117,14 @@ def main(argv=None):
     p.add_argument("--data-seed", type=int, default=TEST_SEED)
     p.add_argument("--seed", type=int, default=0, help="training seed (0 for non-learned baselines)")
     p.add_argument("--out-dir", default="preds")
-    p.add_argument("--data-tag", default=None, help="default: <data>_test_s<data-seed>")
+    p.add_argument("--data-tag", default=None, help="default: <generator module>_test_s<data-seed>")
     p.add_argument("--checkpoint", default=None, help="gru only; default checkpoints/gru_seed<seed>.pt")
     p.add_argument("--device", default="cpu", choices=["auto", "cpu", "cuda", "mps"], help="gru only")
+    p.add_argument("--allow-data-mismatch", action="store_true",
+                   help="predict even if the model was fitted on a different generator")
     a = p.parse_args(argv)
     path = run(a.model, a.data, a.n, a.data_seed, a.seed, a.out_dir, a.data_tag,
-               a.checkpoint, a.device)
+               a.checkpoint, a.device, a.allow_data_mismatch)
     print(f"wrote {path}")
 
 

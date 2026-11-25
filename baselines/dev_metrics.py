@@ -79,21 +79,26 @@ def main(argv=None):
     p.add_argument("--gru-checkpoint", default=None, help="default checkpoints/gru_seed<gru-seed>.pt")
     p.add_argument("--gru-seed", type=int, default=0)
     p.add_argument("--device", default="cpu", choices=["auto", "cpu", "cuda", "mps"], help="gru only")
+    p.add_argument("--data", default="starter",
+                   help="data source: starter, generator, or a module path with make_batch(n, seed)")
     p.add_argument("--data-seed", type=int, default=VAL_SEED)
     p.add_argument("--n", type=int, default=1000)
     p.add_argument("--allow-test", action="store_true")
+    p.add_argument("--allow-data-mismatch", action="store_true",
+                   help="score models fitted on a different generator (e.g. the starter-tuned Kalman)")
     a = p.parse_args(argv)
     check_not_test(a.data_seed, a.allow_test)
 
     from baselines.predict import _predictor
-    from data.starter import make_batch
+    from baselines.train_gru import get_make_batch
 
-    b = make_batch(n=a.n, seed=a.data_seed)
+    b = get_make_batch(a.data)(n=a.n, seed=a.data_seed)
     results = {}
     for m in a.models:
-        predict, _ = _predictor(m, seed=a.gru_seed, checkpoint=a.gru_checkpoint, device=a.device)
+        predict, _ = _predictor(m, seed=a.gru_seed, checkpoint=a.gru_checkpoint, device=a.device,
+                                data=a.data, allow_data_mismatch=a.allow_data_mismatch)
         results[m] = summarize(predict(b["frames"]), b["xy"], b["visible_frac"])   # frames only
-    print(f"starter data seed {a.data_seed}, {a.n} videos")
+    print(f"{a.data} data seed {a.data_seed}, {a.n} videos")
     print(format_table(results))
 
 

@@ -78,7 +78,14 @@ class CacheError(RuntimeError):
 
 def resolve_module(source):
     """'starter', 'generator' or a dotted module path -> the generator module."""
-    return importlib.import_module(DATA_SOURCES.get(source, source))
+    name = DATA_SOURCES.get(source, source)
+    try:
+        return importlib.import_module(name)
+    except ModuleNotFoundError as e:
+        if e.name != name:
+            raise                                  # a dependency is missing: keep the real error
+        hint = " (data/generator.py has not been merged yet)" if name == "data.generator" else ""
+        raise ModuleNotFoundError(f"data source '{source}': no module {name}{hint}", name=name) from None
 
 
 def source_fingerprint(module):

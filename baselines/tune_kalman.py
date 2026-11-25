@@ -16,7 +16,7 @@ import json
 import time
 
 from baselines.detector import detect
-from baselines.dev_metrics import VAL_SEED, format_table, summarize
+from baselines.dev_metrics import TEST_SEED, VAL_SEED, format_table, summarize
 from baselines.kalman import CONFIG_PATH, KalmanConfig, config_dict, track
 
 GRID = {
@@ -40,18 +40,34 @@ def search(frames, xy, vis, grid=GRID, fixed=FIXED):
     return rows
 
 
+def edge_warnings(best, grid=GRID):
+    """Hyperparameters whose best value is the smallest or largest grid value (the
+    optimum may lie outside the grid; widen it and rerun)."""
+    out = []
+    for k, values in grid.items():
+        v = getattr(best, k)
+        if len(values) > 1 and v in (min(values), max(values)):
+            out.append(f"{k}={v} is at the {'lower' if v == min(values) else 'upper'} edge of {values}")
+    return out
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--data", default="starter",
+                   help="data source: starter, generator, or a module path with make_batch(n, seed)")
     p.add_argument("--n", type=int, default=1000, help="validation videos (contract: 1,000)")
     p.add_argument("--top", type=int, default=10)
     p.add_argument("--write", action="store_true", help=f"save the best config to {CONFIG_PATH.name}")
     a = p.parse_args(argv)
 
-    from data.starter import make_batch
-    b = make_batch(n=a.n, seed=VAL_SEED)
+    from baselines.predict import data_identity
+    from baselines.train_gru import get_make_batch
+    assert VAL_SEED != TEST_SEED
+    module, fingerprint = data_identity(a.data)
+    b = get_make_batch(a.data)(n=a.n, seed=VAL_SEED)       # validation bank only, never seed 300
     t0 = time.time()
     rows = search(b["frames"], b["xy"], b["visible_frac"])
-    print(f"{len(rows)} configs on starter val seed {VAL_SEED} ({a.n} videos) in {time.time() - t0:.1f}s")
+    print(f"{len(rows)} configs on {module} val seed {VAL_SEED} ({a.n} videos) in {time.time() - t0:.1f}s")
     print(f"{'overall':>8s} {'visible':>8s} {'partial':>8s} {'hidden':>8s}  config")
     for err, cfg, res in rows[:a.top]:
         print(f"{err:8.3f} {res['visible']['err_px']:8.3f} {res['partial']['err_px']:8.3f} "
@@ -60,13 +76,17 @@ def main(argv=None):
 
     best_err, best, best_res = rows[0]
     print("\nbest config on validation:\n" + format_table({"kalman": best_res}))
+    for w in edge_warnings(best):
+        print(f"WARNING: {w}")
     if a.write:
         doc = {
             "_note": "Kalman hyperparameters chosen by baselines/tune_kalman.py. "
                      "Units: pixels and frames. Selected on validation data only.",
             "params": config_dict(best),
             "selection": {
-                "data": "data.starter.make_batch",
+                "data": f"{module}.make_batch",
+                "module": module,
+                "fingerprint": fingerprint,
                 "data_seed": VAL_SEED,
                 "n_videos": a.n,
                 "objective": "overall mean pixel error, per video then over videos",

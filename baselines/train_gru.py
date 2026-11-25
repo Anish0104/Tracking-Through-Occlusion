@@ -266,6 +266,9 @@ def train(cfg: TrainConfig, train_split=None, val_split=None):
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.lr)
     shuffle_rng = np.random.default_rng(cfg.seed)   # batch order depends on the model seed only
     stopper = EarlyStopping(cfg.patience if cfg.patience > 0 else None, cfg.min_delta)
+    data_module = data_cache.resolve_module(cfg.data)
+    saved_config = {**asdict(cfg), "data_module": data_module.__name__,       # provenance for
+                    "data_fingerprint": data_cache.source_fingerprint(data_module)}  # predict.py
 
     print(f"CNN-GRU seed {cfg.seed} | {n_params:,} params | device {device} | "
           f"train {len(train_split['frames'])} (data seed {cfg.train_seed}) | "
@@ -282,7 +285,7 @@ def train(cfg: TrainConfig, train_split=None, val_split=None):
         history.append({"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss,
                         "seconds": round(time.time() - t0, 2)})
         if improved:
-            save_checkpoint(cfg.checkpoint, model, optimizer, epoch, val_loss, history, asdict(cfg))
+            save_checkpoint(cfg.checkpoint, model, optimizer, epoch, val_loss, history, saved_config)
         print(f"epoch {epoch:2d}  train {train_loss:.6f}  val {val_loss:.6f}"
               f"{'  *best, saved' if improved else ''}  ({history[-1]['seconds']}s)", flush=True)
         if stopper.should_stop:
@@ -293,7 +296,7 @@ def train(cfg: TrainConfig, train_split=None, val_split=None):
     summary = {"seed": cfg.seed, "checkpoint": cfg.checkpoint, "best_epoch": stopper.best_epoch,
                "best_val_loss": stopper.best, "epochs_run": len(history),
                "stopped_early": stopped_early, "n_params": n_params,
-               "data_fingerprint": data_cache.source_fingerprint(data_cache.resolve_module(cfg.data)),
+               "data_fingerprint": saved_config["data_fingerprint"],
                "history": history, "config": asdict(cfg)}
     Path(cfg.checkpoint).with_suffix(".json").write_text(json.dumps(summary, indent=2))
     print(f"best val {stopper.best:.6f} at epoch {stopper.best_epoch} -> {cfg.checkpoint}")
