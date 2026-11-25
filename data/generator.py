@@ -13,6 +13,8 @@ SPLITS = {
     "val": (1000, 200, TRAIN_DURATIONS),
     "test": (1000, 300, TEST_DURATIONS),
 }
+OFFICIAL_TEST_TAG = "generator_test_s300_v1"
+
 # Mean horizontal displacement in pixels per frame.
 SPEED_BINS = ((0.72, 0.87), (0.95, 1.10), (1.18, 1.32))
 MARGIN = 4
@@ -90,8 +92,15 @@ def _pack(samples):
     return dict(zip(("frames", "xy", "visible_frac"), map(np.stack, zip(*samples))))
 
 
-def make_batch(n, seed, *, durations=TRAIN_DURATIONS, motion="mixed"):
-    """Return the starter's three float32 arrays for a custom experiment."""
+def make_batch(n, seed, *, durations=None, motion="mixed"):
+    """Return an official bank for a matching size/seed or generate a custom batch."""
+    if durations is None:
+        durations = TRAIN_DURATIONS
+        if motion == "mixed":
+            for size, split_seed, split_durations in SPLITS.values():
+                if (n, seed) == (size, split_seed):
+                    durations = split_durations
+                    break
     return _pack(_samples(n, seed, durations, motion))
 
 
@@ -105,3 +114,20 @@ def iter_split(split, batch_size=16):
     samples = _samples(n, seed, durations, "mixed")
     while batch := list(islice(samples, batch_size)):
         yield _pack(batch)
+
+
+def iter_test_predictions(prediction_file, batch_size=16):
+    """Pair saved prediction rows with the official labels in dataset order."""
+    from common.io import load_preds
+
+    saved = load_preds(prediction_file)
+    if saved["data_tag"] != OFFICIAL_TEST_TAG:
+        raise ValueError(f"Expected official test data tag {OFFICIAL_TEST_TAG}")
+    predictions = saved["pred_xy"]
+    if predictions.shape != (SPLITS["test"][0], T, 2):
+        raise ValueError("Prediction shape does not match the official test bank")
+    offset = 0
+    for batch in iter_split("test", batch_size):
+        end = offset + len(batch["xy"])
+        yield predictions[offset:end], batch["xy"], batch["visible_frac"]
+        offset = end

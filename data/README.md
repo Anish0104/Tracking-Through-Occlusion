@@ -43,3 +43,36 @@ python -m data.check_splits
 The audit streams all three splits, checks balance and visibility, and checks
 the complete normalized paths for duplicates. No generated videos need to be
 committed or downloaded.
+
+## Official test predictions and evaluation
+
+Use `iter_split("test")` for both inference and evaluation. Keep predictions
+in iteration order and save them with `data.generator.OFFICIAL_TEST_TAG`
+(`generator_test_s300_v1`). The compatibility call `make_batch(1000, 300)`
+returns exactly the same frames, centers, and visibility labels. Passing
+explicit durations or a different motion mode selects a custom experiment.
+To preview the first ten official videos, use
+`next(iter_split("test", batch_size=10))`. A custom ten-video batch has its
+own shuffle.
+
+With the team's baseline prediction CLI, generate the official last-position
+predictions from the repository root:
+
+```bash
+python -m baselines.predict --model last_pos --data generator --data-tag generator_test_s300_v1
+```
+
+Supply the same data source and tag for every official model. Regenerate
+predictions previously written with the old defaults. Before scoring, check
+that the saved tag equals OFFICIAL_TEST_TAG and that pred_xy has shape
+(1000, 40, 2). Match its successive rows to the labels from iter_split("test").
+Reserve this tag for predictions made on the complete, unmodified test bank.
+
+Evaluation can perform these checks and consume aligned labels directly:
+
+```python
+from data.generator import iter_test_predictions
+
+for pred_xy, true_xy, visible_frac in iter_test_predictions("preds/last_pos_seed0.npz"):
+    error_px = ((pred_xy - true_xy) ** 2).sum(axis=-1) ** 0.5 * 64
+```
