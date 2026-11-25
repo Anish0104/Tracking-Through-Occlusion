@@ -1,0 +1,19 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.ipynb_checkpoints/
+.DS_Store
+.vscode/
+
+# generated outputs: never commit
+preds/*.npz
+checkpoints/
+runs/
+*.pt
+*.pth
+data/cache/
+figures/*.png
+*.mp4
+*.gif
