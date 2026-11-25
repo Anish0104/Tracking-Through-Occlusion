@@ -9,6 +9,7 @@ each video, then average over the videos that have at least one such frame
 (eval/README.md: "mean per video, then over videos"). Success = error <= 5 px.
 
     python -m baselines.dev_metrics                    # last_pos vs kalman on val seed 200
+    python -m baselines.dev_metrics --models last_pos kalman gru --gru-checkpoint checkpoints/gru_seed0.pt
 """
 
 import argparse
@@ -73,7 +74,11 @@ def check_not_test(data_seed, allow_test=False):
 
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--models", nargs="+", default=["last_pos", "kalman"], choices=["last_pos", "kalman"])
+    p.add_argument("--models", nargs="+", default=["last_pos", "kalman"],
+                   choices=["last_pos", "kalman", "gru"])
+    p.add_argument("--gru-checkpoint", default=None, help="default checkpoints/gru_seed<gru-seed>.pt")
+    p.add_argument("--gru-seed", type=int, default=0)
+    p.add_argument("--device", default="cpu", choices=["auto", "cpu", "cuda", "mps"], help="gru only")
     p.add_argument("--data-seed", type=int, default=VAL_SEED)
     p.add_argument("--n", type=int, default=1000)
     p.add_argument("--allow-test", action="store_true")
@@ -84,7 +89,10 @@ def main(argv=None):
     from data.starter import make_batch
 
     b = make_batch(n=a.n, seed=a.data_seed)
-    results = {m: summarize(_predictor(m)(b["frames"]), b["xy"], b["visible_frac"]) for m in a.models}
+    results = {}
+    for m in a.models:
+        predict, _ = _predictor(m, seed=a.gru_seed, checkpoint=a.gru_checkpoint, device=a.device)
+        results[m] = summarize(predict(b["frames"]), b["xy"], b["visible_frac"])   # frames only
     print(f"starter data seed {a.data_seed}, {a.n} videos")
     print(format_table(results))
 
