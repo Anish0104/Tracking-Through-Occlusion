@@ -1,0 +1,9 @@
+{
+  "_comment": "Compute table for the report (eval/README.md item 4). Fill in from the machine that trained and ran each model, and record that machine below. train_s = wall-clock training seconds for one seed; infer_ms_per_video = inference milliseconds per video on the 1,000-video official test bank. Parameter counts are read from the prediction files, not from here. null means 'not measured yet' and prints as '-'.",
+  "_machine": "TODO: e.g. MacBook Pro M3 Pro, 18 GB, torch 2.2, device mps",
+  "snn": {"train_s": null, "infer_ms_per_video": null},
+  "snn_reset": {"train_s": null, "infer_ms_per_video": null},
+  "gru": {"train_s": null, "infer_ms_per_video": null},
+  "kalman": {"train_s": null, "infer_ms_per_video": null},
+  "last_pos": {"train_s": null, "infer_ms_per_video": null}
+}
