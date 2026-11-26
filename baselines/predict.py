@@ -12,10 +12,14 @@ Only `frames` reaches the model; labels are never passed to it.
 
 Data provenance
     data_tag defaults to "<generator module name>_test_s<data seed>", e.g.
-    "starter_test_s300" or "generator_test_s300", whichever alias (--data generator
-    or --data data.generator) was typed. The GRU checkpoint and the Kalman config
-    record which generator (module + source fingerprint) they were trained / tuned
-    on; predicting on a different generator raises unless --allow-data-mismatch.
+    "starter_test_s300", whichever alias (--data generator or --data data.generator)
+    was typed. Exception: for the complete official test bank of data/generator.py
+    (--data generator, --n 1000, --data-seed 300; durations 0, 2, 4, 8, 12) the default
+    is data.generator.OFFICIAL_TEST_TAG ("generator_test_s300_v1"), the only tag
+    evaluation accepts; that tag is refused for any other n or seed.
+    The GRU checkpoint and the Kalman config record which generator (module + source
+    fingerprint) they were trained / tuned on; predicting on a different generator
+    raises unless --allow-data-mismatch.
 """
 
 import argparse
@@ -34,10 +38,36 @@ def data_identity(data):
     return module.__name__, data_cache.source_fingerprint(module)
 
 
-def default_data_tag(data, data_seed):
-    """Same tag for every alias of the same generator and seed."""
+def official_test_tag(data, data_seed, n):
+    """The generator's OFFICIAL_TEST_TAG if (n, data_seed) is its complete official test
+    bank (data.generator: 1,000 videos, seed 300, durations 0-12), else None."""
+    from baselines import data_cache
+    module = data_cache.resolve_module(data)
+    tag = getattr(module, "OFFICIAL_TEST_TAG", None)
+    test = getattr(module, "SPLITS", {}).get("test")
+    if tag and test and (n, data_seed) == (test[0], test[1]):
+        return tag
+    return None
+
+
+def default_data_tag(data, data_seed, n=TEST_SIZE):
+    """Same tag for every alias of the same generator and seed. For the complete
+    official test bank this is the generator's OFFICIAL_TEST_TAG, which is the only
+    tag evaluation (data.generator.iter_test_predictions) accepts."""
+    official = official_test_tag(data, data_seed, n)
+    if official:
+        return official
     module, _ = data_identity(data)
     return f"{module.rsplit('.', 1)[-1]}_test_s{data_seed}"
+
+
+def check_data_tag(data_tag, data, data_seed, n):
+    """The official tag is reserved for predictions on the complete, unmodified test bank."""
+    from baselines import data_cache
+    reserved = getattr(data_cache.resolve_module(data), "OFFICIAL_TEST_TAG", None)
+    if reserved and data_tag == reserved and official_test_tag(data, data_seed, n) != reserved:
+        raise ValueError(f"data_tag {reserved!r} is reserved for the complete official test bank; "
+                         f"got n={n}, data seed {data_seed}")
 
 
 def check_provenance(what, trained_module, trained_fp, data, allow=False):
@@ -96,11 +126,12 @@ def run(model="last_pos", data="starter", n=TEST_SIZE, data_seed=TEST_SEED,
         allow_data_mismatch=False):
     from baselines.train_gru import get_make_batch   # same data sources as training
 
+    data_tag = data_tag or default_data_tag(data, data_seed, n)
+    check_data_tag(data_tag, data, data_seed, n)      # before any data is generated
     predict, n_params = _predictor(model, seed, checkpoint, device, data, allow_data_mismatch)
     frames = get_make_batch(data)(n=n, seed=data_seed)["frames"]   # pixels only; labels dropped
     pred_xy = predict(frames)
 
-    data_tag = data_tag or default_data_tag(data, data_seed)
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{model}_seed{seed}.npz"
