@@ -170,13 +170,13 @@ def test_rejects_wrong_rank():
 # ---------------------------------------------------------------- prediction file
 
 def test_cli_writes_contract_file(tmp_path):
-    path = run(model="last_pos", n=8, data_seed=300, out_dir=tmp_path)
+    path = run(model="last_pos", n=8, data_seed=200, out_dir=tmp_path)   # dev seed; never 300
     assert path.name == "last_pos_seed0.npz"
     out = load_preds(path)
     assert out["model"] == "last_pos" and out["seed"] == 0
-    assert out["data_tag"] == "starter_test_s300"
+    assert out["data_tag"] == "starter_test_s200"
     assert out["pred_xy"].shape == (8, 40, 2) and out["pred_xy"].dtype == np.float32
-    assert np.array_equal(out["pred_xy"], last_pos.predict(make_batch(8, 300)["frames"]))
+    assert np.array_equal(out["pred_xy"], last_pos.predict(make_batch(8, 200)["frames"]))
 
 
 # ================================================================ Kalman (phase 2)
@@ -380,10 +380,10 @@ def test_dev_metrics_refuses_test_bank():
 
 
 def test_kalman_cli_writes_contract_file(tmp_path):
-    path = run(model="kalman", n=8, data_seed=300, out_dir=tmp_path)
+    path = run(model="kalman", n=8, data_seed=200, out_dir=tmp_path)   # dev seed; never 300
     assert path.name == "kalman_seed0.npz"
     out = load_preds(path)
     assert out["model"] == "kalman" and out["seed"] == 0
-    assert out["data_tag"] == "starter_test_s300"
+    assert out["data_tag"] == "starter_test_s200"
     assert out["pred_xy"].shape == (8, 40, 2) and out["pred_xy"].dtype == np.float32
-    assert np.array_equal(out["pred_xy"], kalman.predict(make_batch(8, 300)["frames"]))
+    assert np.array_equal(out["pred_xy"], kalman.predict(make_batch(8, 200)["frames"]))

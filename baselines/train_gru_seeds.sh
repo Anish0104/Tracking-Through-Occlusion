@@ -2,7 +2,11 @@
 # Train the CNN-GRU for several model seeds, one after another, on one shared data cache.
 #
 #   DATA=generator bash baselines/train_gru_seeds.sh            # final runs (seeds 0 1 2, MPS)
-#   DATA=starter   bash baselines/train_gru_seeds.sh            # dry run on the starter data
+#   DATA=starter N_TRAIN=200 N_VAL=50 bash baselines/train_gru_seeds.sh   # small starter dry run
+#
+# Final-data guard: DATA=starter (or data.starter) with N_TRAIN >= 5000 is refused before
+# anything is cached or trained, so the starter stand-in cannot be used for the final
+# experiment by accident. ALLOW_STARTER=1 overrides this for a deliberate experiment.
 #
 # Failure handling: `set -o pipefail` makes `cmd | tee log` fail when cmd fails (without
 # it the pipeline reports tee's success), `set -e` stops at the first failing seed, and the
@@ -29,6 +33,17 @@ CACHE_DIR="${CACHE_DIR:-checkpoints/data_cache}"
 OUT_DIR="${OUT_DIR:-checkpoints}"
 PYTHON="${PYTHON:-python}"
 OVERWRITE="${OVERWRITE:-0}"
+ALLOW_STARTER="${ALLOW_STARTER:-0}"
+
+STARTER_FLAG=()
+if [[ "$DATA" == starter || "$DATA" == data.starter ]] && (( N_TRAIN >= 5000 )); then
+  if [[ "$ALLOW_STARTER" != 1 ]]; then
+    echo "refusing to start: DATA=$DATA with N_TRAIN=$N_TRAIN is a full-size run on the starter" \
+         "data; final runs use DATA=generator (ALLOW_STARTER=1 overrides)" >&2
+    exit 2
+  fi
+  STARTER_FLAG=(--allow-starter)
+fi
 
 mkdir -p "$OUT_DIR"
 for s in $SEEDS; do
@@ -47,7 +62,8 @@ for s in $SEEDS; do
   "$PYTHON" -m baselines.train_gru --seed "$s" --data "$DATA" \
     --n-train "$N_TRAIN" --n-val "$N_VAL" --epochs "$EPOCHS" --batch-size "$BATCH_SIZE" \
     --lr "$LR" --patience "$PATIENCE" --device "$DEVICE" --cache-dir "$CACHE_DIR" \
-    --checkpoint "$OUT_DIR/gru_seed$s.pt" --log-every 0 "$@" 2>&1 | tee "$OUT_DIR/gru_seed$s.log"
+    --checkpoint "$OUT_DIR/gru_seed$s.pt" --log-every 0 ${STARTER_FLAG[@]+"${STARTER_FLAG[@]}"} "$@" \
+    2>&1 | tee "$OUT_DIR/gru_seed$s.log"
   if [[ ! "$OUT_DIR/gru_seed$s.json" -nt "$started" ]]; then
     rm -f "$started"
     echo "seed $s: training did not write a fresh summary; treating as failed" >&2

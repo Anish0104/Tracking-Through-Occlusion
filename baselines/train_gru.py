@@ -168,6 +168,7 @@ class TrainConfig:
     cache_format: str = "auto"       # auto | uint8 | raw (see baselines/data_cache.py)
     smoke: bool = False
     log_every: int = 50
+    allow_starter: bool = False      # permit the starter data at full final size (not for final runs)
 
     def __post_init__(self):
         if self.train_seed == self.val_seed:
@@ -247,9 +248,21 @@ def load_checkpoint(path, device="cpu"):
     return model.to(device).eval(), payload
 
 
+def check_final_data(cfg):
+    """Refuse a full-size (final) run on the starter stand-in data unless explicitly
+    allowed. Final CNN-GRU runs must use data/generator.py. Checked by name only, so
+    nothing is generated or cached before the refusal."""
+    if (DATA_SOURCES.get(cfg.data, cfg.data) == "data.starter" and cfg.n_train >= TRAIN_SIZE
+            and not cfg.allow_starter):
+        raise ValueError(f"refusing a full-size run ({cfg.n_train} training videos) on the starter "
+                         "data: final runs use --data generator. Pass --allow-starter only for a "
+                         "deliberate full-size starter experiment.")
+
+
 def train(cfg: TrainConfig, train_split=None, val_split=None):
     """Train one seed. Splits may be passed in (tests); otherwise they are generated.
     Returns a summary dict (also written next to the checkpoint as JSON)."""
+    check_final_data(cfg)
     device = resolve_device(cfg.device)
     cache = cfg.cache_dir or None
     if train_split is None:
@@ -325,6 +338,8 @@ def main(argv=None):
                    help=f"tiny run ({SMOKE['n_train']} train / {SMOKE['n_val']} val videos, "
                         f"{SMOKE['epochs']} epochs) to checkpoints/smoke/")
     p.add_argument("--log-every", type=int, default=50)
+    p.add_argument("--allow-starter", action="store_true",
+                   help="permit a full-size run on the starter data (never for final runs)")
     a = p.parse_args(argv)
 
     defaults = SMOKE if a.smoke else dict(n_train=TRAIN_SIZE, n_val=VAL_SIZE, epochs=MAX_EPOCHS)
@@ -335,7 +350,7 @@ def main(argv=None):
                       patience=a.patience, min_delta=a.min_delta, device=a.device,
                       checkpoint=checkpoint, cache_dir=a.cache_dir,
                       cache_format=a.cache_format, smoke=a.smoke,
-                      log_every=a.log_every)
+                      log_every=a.log_every, allow_starter=a.allow_starter)
     train(cfg)
 
 
