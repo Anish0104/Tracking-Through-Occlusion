@@ -190,10 +190,13 @@ def test_gru_prediction_refuses_edited_generator(tmp_path, fakegen):
 
 def test_kalman_config_provenance(fakegen, monkeypatch, tmp_path):
     name, _ = fakegen
-    assert predict_mod._kalman_provenance()[0] == "data.starter"   # committed config (old format)
-    predict_mod._predictor("kalman", data="starter")
-    with pytest.raises(ValueError, match="kalman_config.json"):
-        predict_mod._predictor("kalman", data=name)
+    module, fp = predict_mod._kalman_provenance()                  # committed config
+    assert (module, fp) == predict_mod.data_identity("generator")   # tuned on the current generator
+    predict_mod._predictor("kalman", data="generator")
+    predict_mod._predictor("kalman", data="data.generator")
+    for other in ("starter", name):
+        with pytest.raises(ValueError, match="kalman_config.json"):
+            predict_mod._predictor("kalman", data=other)
     predict_mod._predictor("kalman", data=name, allow_data_mismatch=True)
 
 
@@ -208,8 +211,9 @@ def test_all_baselines_share_one_bank_and_tag(tmp_path, monkeypatch):
     monkeypatch.setitem(predict_mod.run.__globals__, "save_preds",
                         lambda path, pred, **kw: calls.append(kw["data_tag"]) or real(path, pred, **kw))
     ckpt = _train_tiny(tmp_path, "starter")
-    for model in ("last_pos", "kalman"):
-        predict_mod.run(model=model, data="starter", n=3, data_seed=200, out_dir=tmp_path)
+    for model in ("last_pos", "kalman"):   # tag check only; the Kalman config is generator-tuned
+        predict_mod.run(model=model, data="starter", n=3, data_seed=200, out_dir=tmp_path,
+                        allow_data_mismatch=True)
     predict_mod.run(model="gru", data="data.starter", n=3, data_seed=200, out_dir=tmp_path,
                     checkpoint=str(ckpt))
     assert calls == ["starter_test_s200"] * 3

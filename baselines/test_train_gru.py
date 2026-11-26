@@ -265,7 +265,7 @@ def test_dev_metrics_cli_scores_baselines_and_gru(tmp_path, tiny, capsys):
     train(_cfg(tmp_path, checkpoint=str(ckpt)), tiny["train"], tiny["val"])
     capsys.readouterr()                           # drop the training log
     dev_metrics.main(["--n", "4", "--models", "last_pos", "kalman", "gru",
-                      "--gru-checkpoint", str(ckpt)])
+                      "--gru-checkpoint", str(ckpt), "--allow-data-mismatch"])   # generator-tuned Kalman
     out = capsys.readouterr().out
     for m in ("last_pos", "kalman", "gru"):
         assert sum(line.startswith(m + " ") for line in out.splitlines()) == 4   # one row per category
