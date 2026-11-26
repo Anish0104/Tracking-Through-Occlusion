@@ -355,3 +355,73 @@ def test_animation_is_written(tmp_path):
     assert len(videos) == 2 and all(isinstance(v, int) for v in videos)
     out = animate(labels, by_model, videos, str(tmp_path / "demo.gif"), fps=4)
     assert os.path.getsize(out) > 1000
+
+
+# --------------------------------------------------------------------------- #
+# compute timings
+# --------------------------------------------------------------------------- #
+
+def test_timing_is_per_video_not_per_call():
+    from eval.measure_compute import time_predict
+    frames = np.zeros((10, 2, 4, 4), np.float32)
+    ms = time_predict(lambda f: None, frames, repeats=1, warmup=0)
+    assert ms >= 0.0                               # 10 videos -> per-video figure
+
+
+def test_update_file_merges_without_losing_entries(tmp_path):
+    from eval.measure_compute import update_file
+    path = str(tmp_path / "compute.json")
+    update_file(path, {"kalman": 0.17}, "machine A")
+    data = update_file(path, {"last_pos": 0.16}, "machine A")
+    assert data["kalman"]["infer_ms_per_video"] == 0.17
+    assert data["last_pos"]["infer_ms_per_video"] == 0.16
+
+
+def test_update_file_refuses_to_mix_machines(tmp_path):
+    from eval.measure_compute import update_file
+    path = str(tmp_path / "compute.json")
+    update_file(path, {"kalman": 0.17}, "machine A")
+    with pytest.raises(SystemExit, match="one machine"):
+        update_file(path, {"gru": 3.1}, "machine B")
+    assert update_file(path, {"gru": 3.1}, "machine B", force=True)["gru"]
+
+
+def test_update_file_records_training_time_without_claiming_the_machine(tmp_path):
+    from eval.measure_compute import update_file
+    path = str(tmp_path / "compute.json")
+    update_file(path, {"kalman": 0.17}, "machine A")
+    data = update_file(path, {}, "machine B", train_s={"gru": 4200.0})
+    assert data["_machine"] == "machine A"         # timings still came from A
+    assert data["gru"]["train_s"] == 4200.0
+
+
+def test_measure_skips_models_it_cannot_run():
+    from eval.measure_compute import measure
+    timings, skipped = measure(["last_pos", "definitely_not_a_model"], n=4, repeats=1)
+    assert "last_pos" in timings and timings["last_pos"] > 0
+    assert "definitely_not_a_model" in skipped
+
+
+def test_compute_table_reads_the_timings_file(tmp_path):
+    from eval.report import build_runs, compute_table, group_by_model
+    labels = load_labels("starter", n=8, seed=300)
+    preds = tmp_path / "preds"
+    make_fake_predictions(labels, models=("gru",), seeds=(0,), out_dir=str(preds))
+    _, entries, _ = load_all(str(preds), source="starter", n=8, seed=300)
+    by_model = group_by_model(build_runs(labels, entries)["runs"])
+    timings = tmp_path / "compute.json"
+    timings.write_text('{"gru": {"train_s": 120.0, "infer_ms_per_video": 2.5}}')
+    text, rows = compute_table(by_model, str(timings))
+    assert rows["gru"]["train_s"] == 120.0 and rows["gru"]["n_params"] == 1_067_064
+    assert "120.0" in text and "1,067,064" in text
+
+
+def test_compute_table_says_when_timings_are_missing(tmp_path):
+    from eval.report import build_runs, compute_table, group_by_model
+    labels = load_labels("starter", n=8, seed=300)
+    preds = tmp_path / "preds"
+    make_fake_predictions(labels, models=("gru",), seeds=(0,), out_dir=str(preds))
+    _, entries, _ = load_all(str(preds), source="starter", n=8, seed=300)
+    by_model = group_by_model(build_runs(labels, entries)["runs"])
+    text, _ = compute_table(by_model, str(tmp_path / "nope.json"))
+    assert "not found" in text

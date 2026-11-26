@@ -30,8 +30,9 @@ scaffold for checking that the pipeline runs, **not results**.
 | `loader.py` | finds prediction files, pairs them with labels, checks they match |
 | `report.py` | every table; `--json` for machine-readable results |
 | `figures.py` | the five figures below, into `figures/` |
-| `compute.json` | training and inference times — **fill this in by hand** |
-| `test_eval.py` | 41 tests, including known-answer cases for every metric |
+| `measure_compute.py` | measures inference time, writes `compute.json` |
+| `compute.json` | parameters/timings for the compute table |
+| `test_eval.py` | 48 tests, including known-answer cases for every metric |
 | `../demo/animate.py` | side-by-side animation, including failure cases |
 
 ## Definitions
@@ -101,12 +102,33 @@ Each panel shows the frame as the models see it, the true path, one marker per
 model, and the live per-model pixel error in the title. Falls back to GIF if
 ffmpeg is missing.
 
+## Compute table
+
+```bash
+# Inference time, on whichever models can run on this machine
+python -m eval.measure_compute --models last_pos kalman gru snn \
+    --gru-checkpoint checkpoints/final_gru_generator_v1/gru_seed0.pt \
+    --snn-checkpoint checkpoints/snn_seed0.pt --device mps
+
+# Training time has to come from whoever trained it
+python -m eval.measure_compute --train-s gru=4200 snn=9100
+```
+
+Inference times are only comparable when measured on one machine, so the tool
+records the machine in `_machine` and refuses to mix a second one into the file
+unless you pass `--force`. Models whose checkpoints are not present are skipped
+with a reason rather than failing the run.
+
+`last_pos` and `kalman` are recorded with `train_s: 0`: neither has a training
+phase (Kalman is *tuned* on validation). The SNN and GRU still need their
+training seconds and inference times from the machines that trained them.
+
 ## Still to do
 
-* `compute.json` needs real numbers, measured on one machine (see the
-  `_machine` field) — everything else runs today.
-* The team must decide when to open the test bank; until then use
-  `--data starter` or the validation seed.
+* SNN/GRU training seconds and inference times (needs the checkpoints and the
+  training machines) — everything else runs today.
+* Final numbers once the three SNN seeds and the three GRU seeds are trained
+  and the official predictions are generated.
 
 ## Safety checks
 
@@ -117,3 +139,13 @@ know both refer to the same videos. One bad file is reported and skipped
 rather than stopping the run.
 
 Reference values to sanity-check against are in `baselines/HANDOFF.md`.
+
+## Cross-check against baselines/dev_metrics.py
+
+The metrics here were checked against Anuj's independently written
+`baselines/dev_metrics.py` on the validation bank (seed 200): overall, visible,
+partial and hidden error agree to 10 decimal places for both `last_pos` and
+`kalman`, and reproduce the reference table in `baselines/HANDOFF.md`. The
+motion split also independently reproduces the handoff's finding that Kalman's
+hidden-frame error is about 2.5x worse on smooth motion (measured here: 2.55x)
+while last-position is unaffected.

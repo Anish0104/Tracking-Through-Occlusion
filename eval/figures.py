@@ -59,8 +59,12 @@ def _mark_extrapolation(ax, durations):
         step = min(np.diff(sorted(durations))) if len(durations) > 1 else 1
         ax.axvspan(EXTRAPOLATION_DURATION - step / 2, EXTRAPOLATION_DURATION + step / 2,
                    color="0.9", zorder=0)
-        ax.text(EXTRAPOLATION_DURATION, ax.get_ylim()[1], " extrapolation",
-                fontsize=7, va="top", ha="center", color="0.35", rotation=90)
+        # Label the band under the top spine, in axes coordinates, so it never
+        # lands on top of a data line.
+        ax.text(EXTRAPOLATION_DURATION, 0.015, "extrapolation", fontsize=7,
+                transform=ax.get_xaxis_transform(), va="bottom", ha="center",
+                color="0.35", rotation=90,
+                bbox=dict(fc="white", ec="none", alpha=0.7, pad=0.8))
 
 
 def fig_error_vs_duration(by_model, data, out_dir):
