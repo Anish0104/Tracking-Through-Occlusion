@@ -1,0 +1,26 @@
+{
+  "_comment": "Compute table for the report. infer_ms_per_video is measured by eval/measure_compute.py and must come from ONE machine (_machine below) to be comparable. train_s is wall-clock training seconds for one seed and must be supplied by whoever trained the model: python -m eval.measure_compute --train-s gru=4200. 0 means the model has no training phase; null means not recorded yet. Parameter counts come from the prediction files, not from here.",
+  "_machine": "macOS-27.2.1, arm, python 3.14.2, numpy 2.5.5, torch 2.15.0, device cpu",
+  "snn": {
+    "train_s": null,
+    "infer_ms_per_video": null
+  },
+  "snn_reset": {
+    "train_s": null,
+    "infer_ms_per_video": null
+  },
+  "gru": {
+    "train_s": null,
+    "infer_ms_per_video": null
+  },
+  "kalman": {
+    "train_s": 0,
+    "_train_note": "not trained; tuned on validation (baselines/tune_kalman.py)",
+    "infer_ms_per_video": 0.166
+  },
+  "last_pos": {
+    "train_s": 0,
+    "_train_note": "nothing to fit",
+    "infer_ms_per_video": 0.1653
+  }
+}
